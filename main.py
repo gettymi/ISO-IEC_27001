@@ -1,6 +1,14 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
+import os
+import subprocess
+
+# Awaryjna instalacja plotly, jeśli nie jest obecne
+try:
+    import plotly.graph_objects as go
+except ModuleNotFoundError:
+    subprocess.check_call(["pip", "install", "plotly"])
+    import plotly.graph_objects as go
 
 st.set_page_config(page_title="Analiza ryzyka z ISO", layout="wide")
 st.title("🔐 Analiza ryzyka z modułami ISO/IEC 27001 i ISO/IEC 9126")
