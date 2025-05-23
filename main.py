@@ -1,18 +1,12 @@
 import streamlit as st
 import pandas as pd
-from db import init_connection, create_table, insert_risk, fetch_risks
 import plotly.graph_objects as go
+from db import init_connection, insert_risk, fetch_risks
 
-# Konfiguracja aplikacji
 st.set_page_config(page_title="Analiza ryzyka z ISO", layout="wide")
 st.title("🔐 Analiza ryzyka z modułami ISO/IEC 27001 i ISO/IEC 9126")
 
-# Inicjalizacja połączenia i tabeli
-conn = init_connection()
-create_table(conn)
-
-# ------------------- MACIERZ RYZYKA -------------------
-
+# ------------------- FUNKCJA KLASYFIKACJI -------------------
 def klasyfikuj_ryzyko(poziom):
     if poziom <= 6:
         return "Niskie"
@@ -21,11 +15,14 @@ def klasyfikuj_ryzyko(poziom):
     else:
         return "Wysokie"
 
-# Wczytanie danych z bazy przy pierwszym uruchomieniu
+# ------------------- ODCZYT Z BAZY -------------------
 if "df" not in st.session_state:
+    conn = init_connection()
     rows = fetch_risks(conn)
-    st.session_state.df = pd.DataFrame(rows, columns=["ID", "Zagrożenie", "Prawdopodobieństwo", "Wpływ", "Poufność", "Dostępność"])
+    conn.close()
+    st.session_state.df = pd.DataFrame(rows, columns=["Zagrożenie", "Prawdopodobieństwo", "Wpływ", "Poufność", "Dostępność"])
 
+# ------------------- FORMULARZ DODAWANIA -------------------
 st.subheader("➕ Dodaj nowe zagrożenie")
 with st.form("add_risk_form"):
     name = st.text_input("Opis zagrożenia")
@@ -35,13 +32,20 @@ with st.form("add_risk_form"):
     avail = st.checkbox("Narusza dostępność?")
     submitted = st.form_submit_button("Dodaj")
     if submitted and name:
-        insert_risk(conn, name, prob, impact, conf, avail)
-        new_row = {"Zagrożenie": name, "Prawdopodobieństwo": prob, "Wpływ": impact, "Poufność": conf, "Dostępność": avail}
+        new_row = {"Zagrożenie": name, "Prawdopodobieństwo": prob, "Wpływ": impact,
+                   "Poufność": conf, "Dostępność": avail}
         st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_row])], ignore_index=True)
+
+        # 🔄 Zapis do bazy danych
+        conn = init_connection()
+        insert_risk(conn, name, prob, impact, conf, avail)
+        conn.close()
+
         st.success("Zagrożenie dodane.")
 
+# ------------------- EDYCJA I FILTROWANIE -------------------
 st.subheader("✏️ Edytuj macierz ryzyka")
-edited_df = st.data_editor(st.session_state.df.drop(columns="ID", errors="ignore"), num_rows="dynamic", use_container_width=True)
+edited_df = st.data_editor(st.session_state.df, num_rows="dynamic", use_container_width=True)
 st.session_state.df = edited_df.copy()
 edited_df["Poziom ryzyka"] = edited_df["Prawdopodobieństwo"] * edited_df["Wpływ"]
 edited_df["Klasyfikacja"] = edited_df["Poziom ryzyka"].apply(klasyfikuj_ryzyko)
@@ -80,6 +84,7 @@ features = {
     "Efektywność": st.slider("Efektywność", 1, 5, 3),
     "Przenośność": st.slider("Przenośność", 1, 5, 3)
 }
+
 avg = sum(features.values()) / len(features)
 interpretacje = []
 if features["Niezawodność"] >= 4:
@@ -106,7 +111,10 @@ st.plotly_chart(fig, use_container_width=True)
 # ------------------- ISO/IEC 27001 -------------------
 st.header("🔐 ISO/IEC 27001 – Ocena kontroli bezpieczeństwa")
 
-obszar = st.selectbox("Wybierz obszar kontroli (Annex A)", ["A.5 – Organizacyjne", "A.6 – Ludzkie", "A.7 – Fizyczne", "A.8 – Techniczne"])
+obszar = st.selectbox("Wybierz obszar kontroli (Annex A)", [
+    "A.5 – Organizacyjne", "A.6 – Ludzkie", "A.7 – Fizyczne", "A.8 – Techniczne"
+])
+
 kontrole = {
     "A.5 – Organizacyjne": ["Zarządzanie politykami", "Zarządzanie ryzykiem", "Zarządzanie zgodnością"],
     "A.6 – Ludzkie": ["Szkolenia bezpieczeństwa", "Zarządzanie dostępem pracowników"],
